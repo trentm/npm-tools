@@ -3,14 +3,7 @@
  * Copyright Trent Mick. Licensed under the MIT license.
  *
  * A command to attempt to sanely diff package-lock.json changes.
- *
- * Usage:
- *      package-lock-diff [PATH-A] [PATH-B]
- *
- * With zero args it looks at "package-lock.json" in the current dir and
- * compares the current git diff (assuming there is one). With one arg, it
- * compares the git diff for the given path. With two args, it compares the
- * contents of those two files.
+ * See "Usage:" string below or run `package-lock-diff -h` for usage info.
  *
  * -*- mode: js -*-
  * vim: expandtab:ts=4:sw=4
@@ -271,9 +264,9 @@ function main(argv) {
         console.log(`Diff package-lock.json.
 
 Usage:
-    package-lock-diff                 # diff git changes to ./package-lock.json
-    package-lock-diff PATH            # diff git changes to PATH
-    package-lock-diff PATH-A PATH-B   # diff changes between the given paths
+    package-lock-diff                 # diff local git changes to ./package-lock.json
+    package-lock-diff <commit>        # diff between <commit> and local state of ./package-lock.json
+    package-lock-diff PATH-A PATH-B   # diff changes between the given package-lock.json paths
 
 Options:
 ${help}`);
@@ -307,13 +300,30 @@ ${help}`);
                 `don't know how to handle git status '${status.xy}' for ${fpath}`
             );
         }
+    } else if (opts._args.length === 1) {
+        const commitish = opts._args[0];
+        const fpath = './package-lock.json';
+        if (!fs.existsSync(fpath)) {
+            fail(`${fpath} does not exist`);
+        }
+        pathA = `${fpath} (${commitish})`;
+        contentA = gitShow(commitish, fpath);
+        pathB = fpath;
+        contentB = fs.readFileSync(fpath, {encoding: 'utf8'});
+    } else if (opts._args.length === 2) {
+        pathA = opts._args[0];
+        contentA = fs.readFileSync(pathA, {encoding: 'utf8'});
+        pathB = opts._args[1];
+        contentB = fs.readFileSync(pathB, {encoding: 'utf8'});
     } else {
-        throw new Error('args NYI'); // XXX
+        fail(
+            `incorrect number of arguments: args=${JSON.stringify(opts._args)}`
+        );
     }
 
     const diff = packageLockDiff({pathA, contentA, pathB, contentB});
     if (diff.hunks.length > 0) {
-        // console.dir(diff, {depth: 50}); // XXX
+        // console.dir(diff, {depth: 50});
         p(`package-lock-diff --git ${pathA} ${pathB}`);
         p(`--- ${diff.pathA}`);
         p(`+++ ${diff.pathB}`);
