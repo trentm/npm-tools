@@ -1,0 +1,38 @@
+{
+  "name": "@trentm/npm-tools",
+  "version": "0.1.0",
+  "description": "Trent's own tools for working with npm",
+  "private": true,
+  "bin": {
+    "package-lock-diff": "./bin/package-lock-diff"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/trentm/npm-tools.git"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "MIT",
+  "files": [
+    "bin",
+    "lib"
+  ],
+  "scripts": {
+    "lint": "npm run lint:eslint",
+    "lint:eslint": "eslint --ext=js,mjs,cjs . # requires node >=16.0.0",
+    "lint:fix": "eslint --ext=js,mjs,cjs --fix . # requires node >=16.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.55.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.0",
+    "eslint-plugin-n": "^16.3.1",
+    "eslint-plugin-prettier": "^5.0.1",
+    "eslint-plugin-promise": "^6.1.1"
+  },
+  "dependencies": {
+    "dashdash": "^2.0.0",
+    "debug": "^4.3.7"
+  }
+}

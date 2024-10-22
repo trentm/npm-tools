@@ -1,0 +1,333 @@
+#!/usr/bin/env node
+/**
+ * Copyright Trent Mick. Licensed under the MIT license.
+ *
+ * A command to attempt to sanely diff package-lock.json changes.
+ *
+ * Usage:
+ *      package-lock-diff [PATH-A] [PATH-B]
+ *
+ * With zero args it looks at "package-lock.json" in the current dir and
+ * compares the current git diff (assuming there is one). With one arg, it
+ * compares the git diff for the given path. With two args, it compares the
+ * contents of those two files.
+ *
+ * -*- mode: js -*-
+ * vim: expandtab:ts=4:sw=4
+ */
+
+const NAME = 'package-lock-diff';
+
+const assert = require('assert/strict');
+const {execFileSync} = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const dashdash = require('dashdash');
+
+// Use `DEBUG=npm-tools ...` for debug output.
+const debug = require('debug')(NAME);
+debug.inspectOpts = {depth: 50, colors: true};
+
+//---- globals, consts
+
+const p = console.log;
+const pkg = require('../package.json');
+const OPTIONS = [
+    {
+        name: 'version',
+        type: 'bool',
+        help: `Print ${NAME} version and exit.`,
+    },
+    {
+        names: ['help', 'h'],
+        type: 'bool',
+        help: 'Print this help and exit.',
+    },
+];
+
+//---- support functions
+
+function fail(msg) {
+    console.error(`${NAME} error: ${msg}`);
+    process.exit(2);
+}
+
+/**
+ * Returns the git status for the given file path. The return object is:
+ *      {
+ *          xy: <2-char string described in the "Short Format" section of `git help status`
+ *          path: <the file path relative to the repository root>
+ *      }
+ * If the file is unmodified in git, it returns (i.e. no "path" entry):
+ *      {
+ *          xy: '  '
+ *      }
+ *
+ * The 'xy' for locally modified is ' M'.
+ */
+function gitStatus(fpath) {
+    const stdout = execFileSync(
+        'git',
+        ['status', '--porcelain', '-z', path.basename(fpath)],
+        {
+            cwd: path.dirname(fpath),
+            timeout: 5000,
+            encoding: 'utf8',
+        }
+    );
+    const status = {};
+    if (stdout.length === 0) {
+        status.xy = '  ';
+    } else {
+        status.xy = stdout.slice(0, 2);
+        status.path = stdout.slice(3).split('\0')[0];
+    }
+    return status;
+}
+
+function gitShow(revision, fpath) {
+    debug(`git show "$revision:${path.basename(fpath)}"`);
+    return execFileSync(
+        'git',
+        ['show', `${revision}:${path.basename(fpath)}`],
+        {
+            cwd: path.dirname(fpath),
+            timeout: 5000,
+            encoding: 'utf8',
+            maxBuffer: 10 * 1024 * 1024,
+        }
+    );
+}
+
+/**
+ * Normalize a parsed package-lock object for comparison.
+ *
+ * - Drops fields that are irrelevant for `npm ci` usage, like "license",
+ *   "engines", etc.
+ * - Drops some fields that `npm ci` may *use*, but cannot reliably be used
+ *   for diffing because common `npm install` actions result in them getting
+ *   added or removed without a mechanism to control that that I'm aware of.
+ *   E.g. "integrity" and "resolved" if it is a URL to
+ *   "https://registry.npmjs.org".  Note that just removing this subset of
+ *   "resolved" fields is probably not sufficient in general, but should be
+ *   fine for *my* current cases.
+ * - Drops the lockfileVersion=1 legacy "dependencies" top-level field.
+ *   (WARNING: This *breaks* having a lockfileVersion=2 lock file that can be
+ *   then used with older npm versions.)
+ */
+function normPackageLock(plock) {
+    delete plock.dependencies;
+    for (const val of Object.values(plock.packages)) {
+        delete val.license;
+        delete val.engines;
+        delete val.workspaces;
+        delete val.devDependencies;
+        delete val.dependencies;
+        delete val.peerDependencies;
+        delete val.peerDependenciesMeta;
+        delete val.optionalDependencies;
+        delete val.deprecated;
+        delete val.cpu;
+        delete val.os;
+        delete val.funding;
+        delete val.bin;
+
+        delete val.hasInstallScript;
+        delete val.integrity;
+        if (val.resolved) {
+            try {
+                const url = new URL(val.resolved);
+                if (url.hostname === 'registry.npmjs.org') {
+                    delete val.resolved;
+                }
+            } catch (_err) {}
+        }
+    }
+    return plock;
+}
+
+/**
+ * A one-line representation of a normalized value in the package-lock.json
+ * "packages" section.
+ */
+function pkgRepr(subdir, pkg) {
+    let repr = `${subdir}:`;
+    if (pkg.name) {
+        repr += ` ${pkg.name}@${pkg.version}`;
+        delete pkg.name;
+    } else {
+        repr += ` ${pkg.version}`;
+    }
+    delete pkg.version;
+
+    const extras = [];
+    const keys = Object.keys(pkg).sort();
+    for (let k of keys) {
+        const v = pkg[k];
+        if (typeof v === 'boolean') {
+            assert.equal(
+                v,
+                true,
+                'unexpected false value in package-lock "packages" section: ' +
+                    pkg
+            );
+            extras.push(k);
+        } else {
+            extras.push(`${k}=${JSON.stringify(v)}`);
+        }
+    }
+    if (extras.length) {
+        repr += ` (${extras.join(', ')})`;
+    }
+
+    return repr;
+}
+
+/**
+ * Emit a diff-like output that attempts to more meaningfully convey
+ * package-lock.json changes than a line-by-line diff comparison. Liberties
+ * are taken with the typical diff format.
+ *
+ * See: https://docs.npmjs.com/cli/v9/configuring-npm/package-lock-json
+ *
+ * Limitations:
+ * - This only works with lockfileVersion=2 and above, and is only tested
+ *   (at least so far) with lockfileVersion=2.
+ */
+function packageLockDiff({pathA, contentA, pathB, contentB}) {
+    const plockA = normPackageLock(JSON.parse(contentA));
+    // fs.writeFileSync('plockA', JSON.stringify(plockA, null, 2) + '\n', 'utf8');
+    const plockB = normPackageLock(JSON.parse(contentB));
+    // fs.writeFileSync('plockB', JSON.stringify(plockB, null, 2) + '\n', 'utf8');
+    const hunks = []; // sort of like `diff` hunks, be we're not doing line-by-line
+
+    // meta
+    const metaFields = ['name', 'version', 'lockfileVersion'];
+    const metaChanges = [];
+    for (let field of metaFields) {
+        if (plockA[field] !== plockB[field]) {
+            metaChanges.push({
+                a: `${field}: ${plockA[field]}`,
+                b: `${field}: ${plockB[field]}`,
+            });
+        }
+    }
+    if (metaChanges.length > 0) {
+        hunks.push({
+            section: 'meta',
+            changes: metaChanges,
+        });
+    }
+
+    // packages
+    // TODO: separate hunk for each top-level workspace?
+    const subdirs = new Set();
+    const changes = [];
+    for (const [subdir, pkgA] of Object.entries(plockA.packages)) {
+        subdirs.add(subdir);
+        const reprA = pkgRepr(subdir, pkgA);
+        const pkgB = plockB.packages[subdir];
+        if (!pkgB) {
+            changes.push({a: reprA});
+        } else {
+            const reprB = pkgRepr(subdir, pkgB);
+            if (reprA !== reprB) {
+                changes.push({a: reprA, b: reprB});
+            }
+        }
+    }
+    for (const [subdir, pkgB] of Object.entries(plockB.packages)) {
+        if (subdirs.has(subdir)) {
+            continue;
+        }
+        changes.push({b: pkgRepr(subdir, pkgB)});
+    }
+    if (changes.length > 1) {
+        hunks.push({
+            section: 'packages',
+            changes,
+        });
+    }
+
+    return {
+        pathA,
+        pathB,
+        hunks,
+    };
+}
+
+//---- mainline
+
+function main(argv) {
+    var parser = dashdash.createParser({options: OPTIONS});
+    try {
+        var opts = parser.parse(argv);
+    } catch (e) {
+        fail(e.message);
+    }
+
+    if (opts.help) {
+        var help = parser.help({includeEnv: true}).trimRight();
+        console.log(`Diff package-lock.json.
+
+Usage:
+    package-lock-diff                 # diff git changes to ./package-lock.json
+    package-lock-diff PATH            # diff git changes to PATH
+    package-lock-diff PATH-A PATH-B   # diff changes between the given paths
+
+Options:
+${help}`);
+        process.exit(0);
+    } else if (opts.version) {
+        console.log(`${NAME} ${pkg.version}`);
+        console.log(pkg.homepage);
+        process.exit(0);
+    }
+
+    let pathA;
+    let contentA;
+    let pathB;
+    let contentB;
+    if (opts._args.length === 0) {
+        const fpath = './package-lock.json';
+        if (!fs.existsSync(fpath)) {
+            fail(`${fpath} does not exist`);
+        }
+        const status = gitStatus(fpath);
+        if (status.xy === '  ') {
+            debug(`there are no local changes to git file ${fpath}`);
+            process.exit(0);
+        } else if (status.xy === ' M') {
+            pathA = `a/${status.path}`;
+            contentA = gitShow('HEAD', fpath);
+            pathB = `b/${status.path}`;
+            contentB = fs.readFileSync(fpath, {encoding: 'utf8'});
+        } else {
+            fail(
+                `don't know how to handle git status '${status.xy}' for ${fpath}`
+            );
+        }
+    } else {
+        throw new Error('args NYI'); // XXX
+    }
+
+    const diff = packageLockDiff({pathA, contentA, pathB, contentB});
+    if (diff.hunks.length > 0) {
+        // console.dir(diff, {depth: 50}); // XXX
+        p(`package-lock-diff --git ${pathA} ${pathB}`);
+        p(`--- ${diff.pathA}`);
+        p(`+++ ${diff.pathB}`);
+        for (let hunk of diff.hunks) {
+            // TODO: line ranges? colors.
+            p(`@@ @@ ${hunk.section}`);
+            for (let change of hunk.changes) {
+                if (change.a) p(`- ${change.a}`);
+                if (change.b) p(`+ ${change.b}`);
+            }
+        }
+    }
+}
+
+if (require.main === module) {
+    main(process.argv);
+}
