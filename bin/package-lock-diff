@@ -157,10 +157,10 @@ function pkgRepr(subdir, pkg) {
     let repr = `${subdir}:`;
     if (pkg.name) {
         repr += ` ${pkg.name}@${pkg.version}`;
-        delete pkg.name;
-    } else {
+    } else if (pkg.version) {
         repr += ` ${pkg.version}`;
     }
+    delete pkg.name;
     delete pkg.version;
 
     const extras = [];
@@ -390,7 +390,7 @@ ${help}`);
     const diff = packageLockDiff({pathA, contentA, pathB, contentB});
     if (diff.hunks.length > 0) {
         // console.dir(diff, {depth: 50});
-        p(stylize(`package-lock-diff "${pathA}" "${pathB}"`, 'bold'));
+        p(stylize(`package-lock-diff ${opts._args.join(' ')}`, 'bold'));
         p(stylize(`--- ${diff.pathA}`, 'bold'));
         p(stylize(`+++ ${diff.pathB}`, 'bold'));
         for (let hunk of diff.hunks) {
