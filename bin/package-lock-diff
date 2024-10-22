@@ -264,9 +264,9 @@ function main(argv) {
         console.log(`Diff package-lock.json.
 
 Usage:
-    package-lock-diff                 # diff local git changes to ./package-lock.json
-    package-lock-diff <commit>        # diff between <commit> and local state of ./package-lock.json
-    package-lock-diff PATH-A PATH-B   # diff changes between the given package-lock.json paths
+    package-lock-diff                   # diff local git changes to ./package-lock.json
+    package-lock-diff <commit>          # diff between <commit> and local state of ./package-lock.json
+    package-lock-diff <path-a> <path-b> # diff changes between the given package-lock.json paths
 
 Options:
 ${help}`);
