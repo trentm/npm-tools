@@ -396,8 +396,45 @@ ${help}`);
         for (let hunk of diff.hunks) {
             p(stylize('@@ @@', 'cyan') + ' ' + hunk.section);
             for (let change of hunk.changes) {
-                if (change.a) p(stylize(`- ${change.a}`, 'red'));
-                if (change.b) p(stylize(`+ ${change.b}`, 'green'));
+                if (change.a && change.b) {
+                    // Simple attempt at inner-line highlight of diffs.
+                    // const changeIndeces = [];
+                    const tokensA = change.a.split(/([: (),]+)/g);
+                    let segmentsA = [stylize('- ', 'red')];
+                    const tokensB = change.b.split(/([: (),]+)/g);
+                    let segmentsB = [stylize('- ', 'green')];
+                    let i = 0;
+                    for (; i < tokensA.length; i++) {
+                        const tokenA = tokensA[i];
+                        const tokenB = tokensB[i];
+                        if (tokenA === tokenB) {
+                            segmentsA.push(stylize(tokenA, 'red'));
+                            if (tokenB != null) {
+                                segmentsB.push(stylize(tokenB, 'green'));
+                            }
+                        } else {
+                            segmentsA.push(
+                                stylize(stylize(tokenA, 'red'), 'inverse')
+                            );
+                            if (tokenB != null) {
+                                segmentsB.push(
+                                    stylize(stylize(tokenB, 'green'), 'inverse')
+                                );
+                            }
+                        }
+                    }
+                    for (let j = i; j < tokensB.length; j++) {
+                        segmentsB.push(
+                            stylize(stylize(tokensB[j], 'green'), 'inverse')
+                        );
+                    }
+                    p(segmentsA.join(''));
+                    p(segmentsB.join(''));
+                } else if (change.a) {
+                    p(stylize(`- ${change.a}`, 'red'));
+                } else if (change.b) {
+                    p(stylize(`+ ${change.b}`, 'green'));
+                }
             }
         }
     }
