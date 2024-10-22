@@ -402,7 +402,7 @@ ${help}`);
                     const tokensA = change.a.split(/([: (),]+)/g);
                     let segmentsA = [stylize('- ', 'red')];
                     const tokensB = change.b.split(/([: (),]+)/g);
-                    let segmentsB = [stylize('- ', 'green')];
+                    let segmentsB = [stylize('+ ', 'green')];
                     let i = 0;
                     for (; i < tokensA.length; i++) {
                         const tokenA = tokensA[i];
