@@ -1,0 +1,100 @@
+#!/usr/bin/env node
+/**
+ * Copyright Trent Mick. Licensed under the MIT license.
+ *
+ * -*- mode: js -*-
+ * vim: expandtab:ts=4:sw=4
+ */
+
+const NAME = 'npm-release-candence';
+
+const assert = require('assert/strict');
+const {execFileSync} = require('child_process');
+const dashdash = require('dashdash');
+
+//---- globals, consts
+
+const pkg = require('../package.json');
+const OPTIONS = [
+    {
+        name: 'version',
+        type: 'bool',
+        help: `Print ${NAME} version and exit.`,
+    },
+    {
+        names: ['help', 'h'],
+        type: 'bool',
+        help: 'Print this help and exit.',
+    },
+];
+
+//---- support functions
+
+function fail(msg) {
+    console.error(`${NAME} error: ${msg}`);
+    process.exit(2);
+}
+
+function npmInfoTime(pkgName) {
+    const stdout = execFileSync('npm', ['info', '-j', pkgName, 'time'], {
+        timeout: 5000,
+        encoding: 'utf8',
+    });
+    return JSON.parse(stdout);
+}
+
+//---- mainline
+
+function main(argv) {
+    var parser = dashdash.createParser({options: OPTIONS});
+    try {
+        var opts = parser.parse(argv);
+    } catch (e) {
+        fail(e.message);
+    }
+
+    if (opts.help) {
+        var help = parser.help({includeEnv: true}).trimRight();
+        console.log(`Show the release cadence of an npm package.
+This shows 'npm info PKG-NAME time' output enriched with the number of
+days between releases.
+
+Usage:
+    npm-release-candence PKG-NAME
+
+Options:
+${help}`);
+        process.exit(0);
+    } else if (opts.version) {
+        console.log(`${NAME} ${pkg.version}`);
+        console.log(pkg.homepage);
+        process.exit(0);
+    }
+
+    const pkgName = opts._args[0];
+    assert(pkgName);
+    const pkgReleases = npmInfoTime(pkgName);
+
+    const IGNORE_VERS = ['created', 'modified'];
+    console.log('{');
+    let lastT;
+    for (let [v, t] of Object.entries(pkgReleases)) {
+        if (IGNORE_VERS.includes(v)) {
+            console.log(`  "${v}": "${t}",`);
+            continue;
+        }
+        let comment = '';
+        if (lastT) {
+            const delta = new Date(t) - new Date(lastT);
+            const deltaD = delta / 24 / 60 / 60 / 1000;
+            comment = `  // +${Math.ceil(deltaD)}d`;
+        }
+        console.log(`  "${v}": "${t}",${comment}`);
+        lastT = t;
+    }
+    console.log('}');
+}
+
+if (require.main === module) {
+    main(process.argv);
+}

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Trent's own tools for working with npm",
   "private": true,
+  "homepage": "https://github.com/trentm/npm-tools",
   "bin": {
     "package-lock-diff": "./bin/package-lock-diff"
   },
