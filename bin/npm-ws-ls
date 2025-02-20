@@ -8,8 +8,6 @@
  * vim: expandtab:ts=4:sw=4
  */
 
-const assert = require('assert/strict');
-const {execFileSync} = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const dashdash = require('dashdash');
