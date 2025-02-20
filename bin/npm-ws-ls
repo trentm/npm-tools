@@ -1,0 +1,126 @@
+#!/usr/bin/env node
+/**
+ * Copyright Trent Mick. Licensed under the MIT license.
+ *
+ * List npm workspaces in this repo.
+ *
+ * -*- mode: js -*-
+ * vim: expandtab:ts=4:sw=4
+ */
+
+const assert = require('assert/strict');
+const {execFileSync} = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const dashdash = require('dashdash');
+const {globSync} = require('glob');
+
+//---- globals, consts
+
+const NAME = 'npm-ws-ls';
+
+// Use `DEBUG=npm-tools ...` for debug output.
+const debug = require('debug')(NAME);
+debug.inspectOpts = {depth: 50, colors: true};
+
+const p = console.log;
+const pkg = require('../package.json');
+const OPTIONS = [
+    {
+        name: 'version',
+        type: 'bool',
+        help: `Print ${NAME} version and exit.`,
+    },
+    {
+        names: ['help', 'h'],
+        type: 'bool',
+        help: 'Print this help and exit.',
+    },
+];
+
+//---- support functions
+
+function fail(msg) {
+    console.error(`${NAME} error: ${msg}`);
+    process.exit(2);
+}
+
+/**
+ * Starting from the given directory `d`, walk up the tree and find a
+ * "package.json" with a "workspaces" entry. If found it returns:
+ *
+ *      {
+ *          dir: '<absolute directory path holding the workspace package.json>',
+ *          pj: { ... the parsed package.json ... }
+ *      }
+ *
+ * otherwise, returns null;
+ *
+ * @returns {object || null}
+ */
+function findWs(d) {
+    let dir = path.normalize(d);
+    let prevDir = null;
+    let pj;
+    while (dir !== prevDir) {
+        prevDir = dir;
+        try {
+            pj = JSON.parse(fs.readFileSync(path.join(dir, 'package.json')));
+        } catch (err) {
+            dir = path.dirname(dir);
+            continue;
+        }
+        if (pj.workspaces) {
+            return {dir, pj};
+        }
+    }
+    return null;
+}
+
+function wsDirsFromWs(ws) {
+    const relDir = path.relative(process.cwd(), ws.dir);
+    return ws.pj.workspaces
+        .map((wsGlob) => globSync(path.join(relDir, wsGlob, 'package.json')))
+        .flat()
+        .map(path.dirname);
+}
+
+//---- mainline
+
+function main(argv) {
+    var parser = dashdash.createParser({options: OPTIONS});
+    try {
+        var opts = parser.parse(argv);
+    } catch (e) {
+        fail(e.message);
+    }
+
+    if (opts.help) {
+        var help = parser.help({includeEnv: true}).trimRight();
+        console.log(`List npm workspaces in this repo.
+
+Usage:
+    npm-ws-ls
+
+Options:
+${help}`);
+        process.exit(0);
+    } else if (opts.version) {
+        console.log(`${NAME} ${pkg.version}`);
+        console.log(pkg.homepage);
+        process.exit(0);
+    }
+
+    const ws = findWs(process.cwd());
+    if (!ws) {
+        fail('could not find a package.json with "workspaces"');
+    }
+    console.log('XXX', wsDirsFromWs(ws));
+    // for (let d of wsDirsFromWs(ws)) {
+    //     console.log(d);
+    // }
+}
+
+if (require.main === module) {
+    main(process.argv);
+}
