@@ -21,7 +21,6 @@ const NAME = 'npm-ws-ls';
 const debug = require('debug')(NAME);
 debug.inspectOpts = {depth: 50, colors: true};
 
-const p = console.log;
 const pkg = require('../package.json');
 const OPTIONS = [
     {
@@ -113,10 +112,9 @@ ${help}`);
     if (!ws) {
         fail('could not find a package.json with "workspaces"');
     }
-    console.log('XXX', wsDirsFromWs(ws));
-    // for (let d of wsDirsFromWs(ws)) {
-    //     console.log(d);
-    // }
+    for (let d of wsDirsFromWs(ws)) {
+        console.log(d);
+    }
 }
 
 if (require.main === module) {
