@@ -6,6 +6,8 @@
  * vim: expandtab:ts=4:sw=4
  */
 
+// TODO: perhaps add option to include prereleases, they are skipped by default.
+
 const NAME = 'npm-release-candence';
 
 const assert = require('assert/strict');
@@ -81,6 +83,11 @@ ${help}`);
     for (let [v, t] of Object.entries(pkgReleases)) {
         if (IGNORE_VERS.includes(v)) {
             console.log(`  "${v}": "${t}",`);
+            continue;
+        }
+        // Ignore prereleases by default.
+        if (v.includes('-')) {
+            // console.log(`  "${v}": "${t}",`);
             continue;
         }
         let comment = '';
